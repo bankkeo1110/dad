@@ -1,9 +1,9 @@
 import fs from "fs";
 import path from "path";
-import { getAllMediaMeta } from "@/lib/db";
+import { getAllMediaMeta, getAllUploadedMedia } from "@/lib/db";
 
 export type MediaItem = {
-  filename: string;
+  key: string;
   src: string;
   type: "image" | "video";
   name: string;
@@ -38,19 +38,32 @@ function listMediaFiles(): { filename: string; type: "image" | "video" }[] {
 }
 
 export async function getMediaItems(): Promise<MediaItem[]> {
-  const files = listMediaFiles();
-  const meta = await getAllMediaMeta();
+  const [localFiles, meta, uploaded] = await Promise.all([
+    Promise.resolve(listMediaFiles()),
+    getAllMediaMeta(),
+    getAllUploadedMedia(),
+  ]);
 
-  const items: MediaItem[] = files.map(({ filename, type }) => {
+  const localItems: MediaItem[] = localFiles.map(({ filename, type }) => {
     const row = meta.get(filename);
     return {
-      filename,
+      key: `local:${filename}`,
       src: `/media/${filename}`,
       type,
       name: row?.caption?.trim() || prettyName(filename),
       sortOrder: row?.sort_order ?? null,
     };
   });
+
+  const uploadedItems: MediaItem[] = uploaded.map((row) => ({
+    key: `blob:${row.id}`,
+    src: row.url,
+    type: row.type,
+    name: row.caption?.trim() || prettyName(row.pathname),
+    sortOrder: row.sort_order,
+  }));
+
+  const items = [...localItems, ...uploadedItems];
 
   return items.sort((a, b) => {
     if (a.sortOrder !== null && b.sortOrder !== null) return a.sortOrder - b.sortOrder;

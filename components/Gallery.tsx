@@ -33,7 +33,7 @@ export default function Gallery({ items }: { items: MediaItem[] }) {
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
         {items.map((item, i) => (
           <button
-            key={item.src}
+            key={item.key}
             onClick={() => setActiveIndex(i)}
             className="group relative aspect-square overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
           >

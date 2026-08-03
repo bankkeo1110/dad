@@ -2,7 +2,24 @@
 
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { upsertMediaMeta } from "@/lib/db";
+import { del } from "@vercel/blob";
+import {
+  upsertMediaMeta,
+  insertUploadedMedia,
+  updateUploadedMediaMeta,
+  deleteUploadedMediaRow,
+} from "@/lib/db";
+
+async function requireAdmin() {
+  const store = await cookies();
+  if (store.get("admin_auth")?.value !== process.env.ADMIN_PASSWORD) {
+    throw new Error("Unauthorized");
+  }
+}
+
+function parseSortOrder(raw: FormDataEntryValue | null): number | null {
+  return typeof raw === "string" && raw.trim() !== "" && Number.isFinite(Number(raw)) ? Number(raw) : null;
+}
 
 export async function login(formData: FormData) {
   const password = formData.get("password");
@@ -26,22 +43,50 @@ export async function logout() {
 }
 
 export async function saveMeta(formData: FormData) {
-  const store = await cookies();
-  if (store.get("admin_auth")?.value !== process.env.ADMIN_PASSWORD) {
-    throw new Error("Unauthorized");
-  }
+  await requireAdmin();
 
   const filename = formData.get("filename");
   const caption = formData.get("caption");
-  const sortOrderRaw = formData.get("sortOrder");
   if (typeof filename !== "string" || !filename) return;
 
-  const sortOrder =
-    typeof sortOrderRaw === "string" && sortOrderRaw.trim() !== "" && Number.isFinite(Number(sortOrderRaw))
-      ? Number(sortOrderRaw)
-      : null;
+  await upsertMediaMeta(filename, typeof caption === "string" ? caption : "", parseSortOrder(formData.get("sortOrder")));
+  revalidatePath("/");
+  revalidatePath("/admin");
+}
 
-  await upsertMediaMeta(filename, typeof caption === "string" ? caption : "", sortOrder);
+export async function recordUpload(url: string, pathname: string, contentType: string) {
+  await requireAdmin();
+
+  const type = contentType.startsWith("video/") ? "video" : "image";
+  await insertUploadedMedia(url, pathname, type);
+  revalidatePath("/");
+  revalidatePath("/admin");
+}
+
+export async function saveUploadedMeta(formData: FormData) {
+  await requireAdmin();
+
+  const idRaw = formData.get("id");
+  const caption = formData.get("caption");
+  const id = typeof idRaw === "string" ? Number(idRaw) : NaN;
+  if (!Number.isFinite(id)) return;
+
+  await updateUploadedMediaMeta(id, typeof caption === "string" ? caption : "", parseSortOrder(formData.get("sortOrder")));
+  revalidatePath("/");
+  revalidatePath("/admin");
+}
+
+export async function deleteUploaded(formData: FormData) {
+  await requireAdmin();
+
+  const idRaw = formData.get("id");
+  const id = typeof idRaw === "string" ? Number(idRaw) : NaN;
+  if (!Number.isFinite(id)) return;
+
+  const url = await deleteUploadedMediaRow(id);
+  if (url) {
+    await del(url);
+  }
   revalidatePath("/");
   revalidatePath("/admin");
 }
