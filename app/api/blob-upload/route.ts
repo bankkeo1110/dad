@@ -1,10 +1,11 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { isValidAdminSession } from "@/lib/auth";
 
 export async function POST(request: Request): Promise<NextResponse> {
   const store = await cookies();
-  if (store.get("admin_auth")?.value !== process.env.ADMIN_PASSWORD) {
+  if (!isValidAdminSession(store.get("admin_auth")?.value)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

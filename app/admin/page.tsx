@@ -1,12 +1,13 @@
 import { cookies } from "next/headers";
 import { listMediaFilenames } from "@/lib/media";
 import { getAllMediaMeta, getAllUploadedMedia } from "@/lib/db";
+import { isValidAdminSession } from "@/lib/auth";
 import { login, logout, saveMeta, saveUploadedMeta, deleteUploaded } from "./actions";
 import UploadForm from "@/components/UploadForm";
 
 export default async function AdminPage() {
   const store = await cookies();
-  const authed = store.get("admin_auth")?.value === process.env.ADMIN_PASSWORD;
+  const authed = isValidAdminSession(store.get("admin_auth")?.value);
 
   if (!authed) {
     return (

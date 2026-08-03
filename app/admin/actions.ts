@@ -3,6 +3,7 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { del } from "@vercel/blob";
+import { isValidAdminSession } from "@/lib/auth";
 import {
   upsertMediaMeta,
   insertUploadedMedia,
@@ -12,7 +13,7 @@ import {
 
 async function requireAdmin() {
   const store = await cookies();
-  if (store.get("admin_auth")?.value !== process.env.ADMIN_PASSWORD) {
+  if (!isValidAdminSession(store.get("admin_auth")?.value)) {
     throw new Error("Unauthorized");
   }
 }
@@ -23,7 +24,7 @@ function parseSortOrder(raw: FormDataEntryValue | null): number | null {
 
 export async function login(formData: FormData) {
   const password = formData.get("password");
-  if (typeof password === "string" && password.length > 0 && password === process.env.ADMIN_PASSWORD) {
+  if (typeof password === "string" && Boolean(process.env.ADMIN_PASSWORD) && password === process.env.ADMIN_PASSWORD) {
     const store = await cookies();
     store.set("admin_auth", password, {
       httpOnly: true,
