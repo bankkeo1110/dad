@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import Link from "next/link";
 import { listMediaFilenames } from "@/lib/media";
 import { getAllMediaMeta, getAllUploadedMedia } from "@/lib/db";
 import { isValidAdminSession } from "@/lib/auth";
@@ -38,9 +39,9 @@ export default async function AdminPage() {
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">Quản lý ảnh/video</h1>
         <div className="flex items-center gap-4">
-          <a href="/" className="text-sm text-zinc-500 underline">
+          <Link href="/" className="text-sm text-zinc-500 underline">
             Về trang chính
-          </a>
+          </Link>
           <form action={logout}>
             <button className="text-sm text-zinc-500 underline">Đăng xuất</button>
           </form>

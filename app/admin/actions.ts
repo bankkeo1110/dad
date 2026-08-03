@@ -6,7 +6,6 @@ import { del } from "@vercel/blob";
 import { isValidAdminSession } from "@/lib/auth";
 import {
   upsertMediaMeta,
-  insertUploadedMedia,
   updateUploadedMediaMeta,
   deleteUploadedMediaRow,
 } from "@/lib/db";
@@ -51,15 +50,6 @@ export async function saveMeta(formData: FormData) {
   if (typeof filename !== "string" || !filename) return;
 
   await upsertMediaMeta(filename, typeof caption === "string" ? caption : "", parseSortOrder(formData.get("sortOrder")));
-  revalidatePath("/");
-  revalidatePath("/admin");
-}
-
-export async function recordUpload(url: string, pathname: string, contentType: string) {
-  // Public: the homepage upload form lets anyone with the link add photos,
-  // while editing captions/order and deleting stay behind admin login.
-  const type = contentType.startsWith("video/") ? "video" : "image";
-  await insertUploadedMedia(url, pathname, type);
   revalidatePath("/");
   revalidatePath("/admin");
 }

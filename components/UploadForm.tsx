@@ -2,8 +2,6 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { upload } from "@vercel/blob/client";
-import { recordUpload } from "@/app/admin/actions";
 
 export default function UploadForm() {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -14,7 +12,10 @@ export default function UploadForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const files = inputRef.current?.files;
-    if (!files || files.length === 0) return;
+    if (!files || files.length === 0) {
+      setStatus("Vui lòng chọn ảnh hoặc video trước khi bấm Upload.");
+      return;
+    }
 
     setBusy(true);
     let done = 0;
@@ -23,11 +24,13 @@ export default function UploadForm() {
     for (const file of Array.from(files)) {
       setStatus(`Đang tải lên ${done + 1}/${total}: ${file.name}`);
       try {
-        const blob = await upload(file.name, file, {
-          access: "public",
-          handleUploadUrl: "/api/blob-upload",
-        });
-        await recordUpload(blob.url, blob.pathname, blob.contentType ?? file.type);
+        const formData = new FormData();
+        formData.set("file", file);
+        const res = await fetch("/api/upload", { method: "POST", body: formData });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || `Lỗi máy chủ (${res.status})`);
+        }
         done++;
       } catch (err) {
         setStatus(`Lỗi khi tải "${file.name}": ${err instanceof Error ? err.message : String(err)}`);
@@ -61,6 +64,7 @@ export default function UploadForm() {
         {busy ? "Đang tải lên..." : "Upload"}
       </button>
       {status && <p className="text-sm text-zinc-500">{status}</p>}
+      <p className="text-xs text-zinc-400">Ảnh/video tối đa 4MB mỗi file qua web.</p>
     </form>
   );
 }
