@@ -56,8 +56,8 @@ export async function saveMeta(formData: FormData) {
 }
 
 export async function recordUpload(url: string, pathname: string, contentType: string) {
-  await requireAdmin();
-
+  // Public: the homepage upload form lets anyone with the link add photos,
+  // while editing captions/order and deleting stay behind admin login.
   const type = contentType.startsWith("video/") ? "video" : "image";
   await insertUploadedMedia(url, pathname, type);
   revalidatePath("/");

@@ -1,5 +1,6 @@
 import { getMediaItems } from "@/lib/media";
 import Gallery from "@/components/Gallery";
+import UploadForm from "@/components/UploadForm";
 
 export default async function Home() {
   const items = await getMediaItems();
@@ -17,6 +18,8 @@ export default async function Home() {
               : "Nơi lưu giữ những hình ảnh và video về Ba"}
           </p>
         </header>
+
+        <UploadForm />
 
         <Gallery items={items} />
       </main>

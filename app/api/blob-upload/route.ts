@@ -1,14 +1,7 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { isValidAdminSession } from "@/lib/auth";
 
 export async function POST(request: Request): Promise<NextResponse> {
-  const store = await cookies();
-  if (!isValidAdminSession(store.get("admin_auth")?.value)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const body = (await request.json()) as HandleUploadBody;
 
   try {
@@ -18,6 +11,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       onBeforeGenerateToken: async () => ({
         allowedContentTypes: ["image/*", "video/*"],
         addRandomSuffix: true,
+        maximumSizeInBytes: 200 * 1024 * 1024,
       }),
       onUploadCompleted: async () => {
         // Handled client-side via the recordUpload server action instead,
