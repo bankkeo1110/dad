@@ -9,6 +9,8 @@ export type MediaItem = {
   type: "image" | "video";
   name: string;
   sortOrder: number | null;
+  source: "local" | "blob";
+  uploadedAt: number | null;
 };
 
 const IMAGE_EXT = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif"]);
@@ -62,6 +64,8 @@ export async function getMediaItems(): Promise<MediaItem[]> {
         type,
         name: row?.caption?.trim() || prettyName(filename),
         sortOrder: row?.sort_order ?? null,
+        source: "local" as const,
+        uploadedAt: null,
       };
     });
 
@@ -71,14 +75,23 @@ export async function getMediaItems(): Promise<MediaItem[]> {
     type: row.type,
     name: row.caption?.trim() || prettyName(row.pathname),
     sortOrder: row.sort_order,
+    source: "blob" as const,
+    uploadedAt: new Date(row.created_at).getTime(),
   }));
 
   const items = [...localItems, ...uploadedItems];
 
+  // Order: items the admin pinned with an explicit sort order, then the newest
+  // uploads, then the photos bundled with the project (which have no upload time
+  // of their own — on Vercel every file carries the deployment's timestamp).
   return items.sort((a, b) => {
     if (a.sortOrder !== null && b.sortOrder !== null) return a.sortOrder - b.sortOrder;
     if (a.sortOrder !== null) return -1;
     if (b.sortOrder !== null) return 1;
+
+    if (a.source !== b.source) return a.source === "blob" ? -1 : 1;
+    if (a.uploadedAt !== null && b.uploadedAt !== null) return b.uploadedAt - a.uploadedAt;
+
     return a.name.localeCompare(b.name, "vi");
   });
 }

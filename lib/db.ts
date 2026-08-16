@@ -87,6 +87,7 @@ export type UploadedMedia = {
   type: "image" | "video";
   caption: string | null;
   sort_order: number | null;
+  created_at: string;
 };
 
 export async function getAllUploadedMedia(): Promise<UploadedMedia[]> {
@@ -94,9 +95,9 @@ export async function getAllUploadedMedia(): Promise<UploadedMedia[]> {
   try {
     await ensureSchema();
     return (await sql`
-      SELECT id, url, pathname, type, caption, sort_order
+      SELECT id, url, pathname, type, caption, sort_order, created_at
       FROM uploaded_media
-      ORDER BY created_at ASC
+      ORDER BY created_at DESC
     `) as UploadedMedia[];
   } catch {
     return [];
