@@ -12,7 +12,26 @@ const MAX_BYTES = 4 * 1024 * 1024;
 // wiped between invocations), so uploads must go to Blob storage there. The local disk
 // path exists purely so `next dev` works without a Blob store.
 const CAN_WRITE_FILES = !process.env.VERCEL;
-const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
+
+// Vercel names the read-write token BLOB_READ_WRITE_TOKEN only for the first store
+// connected to a project; additional stores get a prefixed name (DAD_READ_WRITE_TOKEN
+// and so on) that cannot be renamed. Discover the token by shape instead, so the
+// gallery keeps working whichever store is attached.
+function blobTokenCandidates(): { name: string; token: string }[] {
+  const found = Object.entries(process.env)
+    .filter(
+      ([name, value]) =>
+        name.endsWith("READ_WRITE_TOKEN") && typeof value === "string" && value.startsWith("vercel_blob_rw_"),
+    )
+    .map(([name, value]) => ({ name, token: value as string }));
+
+  // Prefer the canonical name, then stay deterministic across invocations.
+  return found.sort((a, b) => {
+    if (a.name === "BLOB_READ_WRITE_TOKEN") return -1;
+    if (b.name === "BLOB_READ_WRITE_TOKEN") return 1;
+    return a.name.localeCompare(b.name);
+  });
+}
 
 function sanitizeUploadName(name: string) {
   return name
@@ -55,12 +74,13 @@ export async function POST(request: Request) {
   }
 
   const type = file.type.startsWith("video/") ? "video" : "image";
+  const candidates = blobTokenCandidates();
 
-  if (!BLOB_TOKEN && !CAN_WRITE_FILES) {
+  if (candidates.length === 0 && !CAN_WRITE_FILES) {
     return NextResponse.json(
       {
         error:
-          "Chưa cấu hình kho lưu trữ file. Vào Vercel → Storage → tạo/kết nối một Blob store cho project này (biến BLOB_READ_WRITE_TOKEN), rồi deploy lại.",
+          "Chưa cấu hình kho lưu trữ file. Vào Vercel → Storage → kết nối một Blob store (access: public) cho project này, rồi deploy lại.",
       },
       { status: 503 },
     );
@@ -69,29 +89,39 @@ export async function POST(request: Request) {
   let blobUrl = "";
   let blobPathname = "";
 
-  try {
-    if (BLOB_TOKEN) {
-      const blob = await put(file.name, file, {
-        access: "public",
-        addRandomSuffix: true,
-        token: BLOB_TOKEN,
-      });
-      blobUrl = blob.url;
-      blobPathname = blob.pathname;
-    } else {
+  if (candidates.length > 0) {
+    // A private store rejects access: 'public', so try each connected store rather
+    // than assuming the first one is the public gallery store.
+    const failures: string[] = [];
+
+    for (const { name, token } of candidates) {
+      try {
+        const blob = await put(file.name, file, { access: "public", addRandomSuffix: true, token });
+        blobUrl = blob.url;
+        blobPathname = blob.pathname;
+        console.log("[upload] stored via", name, blob.pathname);
+        break;
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        console.error("[upload] blob put failed", { tokenName: name, file: file.name, reason });
+        failures.push(`${name}: ${reason}`);
+      }
+    }
+
+    if (!blobUrl) {
+      // Never fall back to the disk on a read-only host: that is what produced the
+      // EROFS 500s instead of a usable error message.
+      return NextResponse.json({ error: `Tải lên thất bại: ${failures.join(" | ")}` }, { status: 502 });
+    }
+  } else {
+    try {
       const local = await saveUploadedFileLocally(file);
       blobUrl = local.url;
       blobPathname = local.pathname;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      return NextResponse.json({ error: `Tải lên thất bại: ${reason}` }, { status: 502 });
     }
-  } catch (error) {
-    // Never fall back to the disk on a read-only host: that is what produced the
-    // EROFS 500s instead of a usable error message.
-    const reason = error instanceof Error ? error.message : String(error);
-    console.error("[upload] failed", { name: file.name, size: file.size, usingBlob: Boolean(BLOB_TOKEN), reason });
-    return NextResponse.json(
-      { error: `Tải lên thất bại: ${reason}` },
-      { status: 502 },
-    );
   }
 
   if (process.env.DATABASE_URL) {
@@ -113,5 +143,5 @@ export async function POST(request: Request) {
   revalidatePath("/");
   revalidatePath("/admin");
 
-  return NextResponse.json({ ok: true, mode: BLOB_TOKEN ? "blob" : "local" });
+  return NextResponse.json({ ok: true, mode: candidates.length > 0 ? "blob" : "local" });
 }
