@@ -58,15 +58,26 @@ export default function UploadForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mb-8 flex flex-col gap-3 rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-950/40">
-      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Tải ảnh/video lên</label>
+    <form
+      onSubmit={handleSubmit}
+      className="rounded-[28px] border border-stone-200 bg-white/75 p-4 shadow-[0_18px_50px_rgba(79,52,37,0.08)] backdrop-blur-xl sm:p-6"
+    >
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium uppercase tracking-[0.18em] text-stone-500">Thư viện</p>
+          <h2 className="mt-1 text-xl font-semibold text-stone-900">Tải ảnh hoặc video mới</h2>
+        </div>
+        <div className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-medium text-stone-600">
+          {busy ? "Đang xử lý" : "Sẵn sàng"}
+        </div>
+      </div>
 
-      <div className="flex flex-col gap-2">
-        <label className="group inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl border border-dashed border-zinc-400 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-700 transition-all duration-200 hover:-translate-y-0.5 hover:border-zinc-600 hover:bg-white hover:text-zinc-900 hover:shadow-md dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:border-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white">
-          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-zinc-200 text-base transition-transform duration-200 group-hover:scale-110 dark:bg-zinc-700">
-            📎
+      <div className="flex flex-col gap-4">
+        <label className="group flex w-full cursor-pointer items-center justify-center gap-3 rounded-2xl border border-dashed border-stone-300 bg-gradient-to-r from-stone-50 to-amber-50 px-4 py-5 text-sm font-medium text-stone-700 transition-all duration-200 hover:-translate-y-0.5 hover:border-stone-400 hover:bg-white hover:shadow-md">
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-stone-900 text-base text-white shadow-sm transition-transform duration-200 group-hover:scale-105">
+            +
           </span>
-          <span className="underline-offset-4 transition group-hover:underline">{selectedFiles.length > 0 ? "Thay đổi file" : "Choose Files"}</span>
+          <span className="text-base text-stone-700">{selectedFiles.length > 0 ? "Thay đổi file" : "Chọn file"}</span>
           <input
             ref={inputRef}
             type="file"
@@ -79,22 +90,32 @@ export default function UploadForm() {
         </label>
 
         {selectedFiles.length > 0 && (
-          <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-2 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-            {selectedFiles.length <= 3 ? selectedFiles.join(", ") : `${selectedFiles.length} file đã chọn`}
+          <div className="flex flex-wrap gap-2">
+            {selectedFiles.map((fileName) => (
+              <span
+                key={fileName}
+                className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-xs text-stone-700"
+              >
+                {fileName}
+              </span>
+            ))}
           </div>
         )}
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <button
+            type="submit"
+            disabled={busy}
+            className="inline-flex w-full items-center justify-center rounded-xl bg-stone-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+          >
+            {busy ? "Đang tải lên..." : "Upload lên thư viện"}
+          </button>
+
+          <p className="text-xs text-stone-500">Ảnh/video tối đa 4MB mỗi file qua web.</p>
+        </div>
       </div>
 
-      <button
-        type="submit"
-        disabled={busy}
-        className="w-fit rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-      >
-        {busy ? "Đang tải lên..." : "Upload"}
-      </button>
-
-      {status && <p className="text-sm text-zinc-500 dark:text-zinc-400">{status}</p>}
-      <p className="text-xs text-zinc-400">Ảnh/video tối đa 4MB mỗi file qua web.</p>
+      {status && <p className="mt-4 text-sm text-stone-600">{status}</p>}
     </form>
   );
 }
