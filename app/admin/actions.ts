@@ -4,7 +4,6 @@ import fs from "fs";
 import path from "path";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { del } from "@vercel/blob";
 import { isValidAdminSession } from "@/lib/auth";
 import {
   upsertMediaMeta,
@@ -13,13 +12,17 @@ import {
   deleteMediaMeta,
   insertUploadedMedia,
   getAllUploadedMedia,
+  getAllMediaMeta,
 } from "@/lib/db";
 import {
+  CAN_WRITE_FILES,
   addDeletedMedia,
   getDeletedMedia,
   removeDeletedMedia,
   restoreDeletedLocalFile,
 } from "@/lib/deleted-media";
+
+const VIDEO_EXT = [".mp4", ".webm", ".mov", ".m4v"];
 
 async function requireAdmin() {
   const store = await cookies();
@@ -88,7 +91,7 @@ export async function deleteUploaded(formData: FormData) {
   const rows = await getAllUploadedMedia();
   const row = rows.find((item) => item.id === id);
   if (row) {
-    addDeletedMedia({
+    await addDeletedMedia({
       id: `blob:${id}`,
       key: `blob:${id}`,
       source: "blob",
@@ -101,10 +104,9 @@ export async function deleteUploaded(formData: FormData) {
     });
   }
 
-  const url = await deleteUploadedMediaRow(id);
-  if (url) {
-    await del(url);
-  }
+  // The blob itself is kept so "Restore" can bring the item back; deleting it here
+  // would leave the restored row pointing at a dead URL.
+  await deleteUploadedMediaRow(id);
   revalidatePath("/");
   revalidatePath("/admin");
 }
@@ -117,24 +119,33 @@ export async function removeMediaItem(formData: FormData) {
     const filename = itemKey.slice("local:".length);
     if (!filename) return;
 
+    const lower = filename.toLowerCase();
+    const meta = await getAllMediaMeta();
     const filePath = path.join(process.cwd(), "public", "media", filename);
-    const backupDir = path.join(process.cwd(), ".deleted-media", "backups");
-    const backupPath = path.join(backupDir, `${Date.now()}-${filename}`);
+    let backupPath: string | undefined;
 
-    if (fs.existsSync(filePath)) {
+    // Only a writable host can move the file aside; elsewhere the deleted record
+    // itself hides the file from the gallery.
+    if (CAN_WRITE_FILES && fs.existsSync(filePath)) {
+      const backupDir = path.join(process.cwd(), ".deleted-media", "backups");
+      backupPath = path.join(backupDir, `${Date.now()}-${filename}`);
       fs.mkdirSync(backupDir, { recursive: true });
       fs.copyFileSync(filePath, backupPath);
-      addDeletedMedia({
-        id: `${Date.now()}`,
-        key: itemKey,
-        source: "local",
-        type: filename.toLowerCase().endsWith(".mp4") || filename.toLowerCase().endsWith(".webm") || filename.toLowerCase().endsWith(".mov") || filename.toLowerCase().endsWith(".m4v") ? "video" : "image",
-        name: filename,
-        src: `/media/${filename}`,
-        filename,
-        backupPath,
-        deletedAt: new Date().toISOString(),
-      });
+    }
+
+    await addDeletedMedia({
+      id: itemKey,
+      key: itemKey,
+      source: "local",
+      type: VIDEO_EXT.some((ext) => lower.endsWith(ext)) ? "video" : "image",
+      name: meta.get(filename)?.caption ?? "",
+      src: `/media/${filename}`,
+      filename,
+      backupPath,
+      deletedAt: new Date().toISOString(),
+    });
+
+    if (backupPath) {
       await fs.promises.unlink(filePath);
     }
     await deleteMediaMeta(filename);
@@ -147,8 +158,8 @@ export async function removeMediaItem(formData: FormData) {
     const rows = await getAllUploadedMedia();
     const row = rows.find((item) => item.id === id);
     if (row) {
-      addDeletedMedia({
-        id: `blob:${id}`,
+      await addDeletedMedia({
+        id: itemKey,
         key: itemKey,
         source: "blob",
         type: row.type,
@@ -160,10 +171,8 @@ export async function removeMediaItem(formData: FormData) {
       });
     }
 
-    const url = await deleteUploadedMediaRow(id);
-    if (url) {
-      await del(url);
-    }
+    // Keep the blob so "Restore" works — see deleteUploaded.
+    await deleteUploadedMediaRow(id);
   }
 
   revalidatePath("/");
@@ -176,12 +185,15 @@ export async function restoreDeleted(formData: FormData) {
   const key = formData.get("key");
   if (typeof key !== "string" || !key) return;
 
-  const deleted = getDeletedMedia().find((item) => item.key === key);
+  const deleted = (await getDeletedMedia()).find((item) => item.key === key);
   if (!deleted) return;
 
   if (deleted.source === "local" && deleted.filename) {
-    const restored = restoreDeletedLocalFile(deleted);
-    if (restored) {
+    // On a writable host the file was moved to a backup and has to be copied back.
+    // On a read-only host it never left public/media, so dropping the deleted
+    // record below is all it takes to un-hide it.
+    restoreDeletedLocalFile(deleted);
+    if (deleted.name) {
       await upsertMediaMeta(deleted.filename, deleted.name, null);
     }
   }
@@ -193,7 +205,7 @@ export async function restoreDeleted(formData: FormData) {
     }
   }
 
-  removeDeletedMedia(key);
+  await removeDeletedMedia(key);
   revalidatePath("/");
   revalidatePath("/admin");
 }

@@ -8,6 +8,12 @@ import { insertUploadedMedia } from "@/lib/db";
 const ALLOWED_PREFIXES = ["image/", "video/"];
 const MAX_BYTES = 4 * 1024 * 1024;
 
+// On Vercel the deployment filesystem is read-only (only /tmp is writable, and it is
+// wiped between invocations), so uploads must go to Blob storage there. The local disk
+// path exists purely so `next dev` works without a Blob store.
+const CAN_WRITE_FILES = !process.env.VERCEL;
+const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
+
 function sanitizeUploadName(name: string) {
   return name
     .trim()
@@ -49,14 +55,27 @@ export async function POST(request: Request) {
   }
 
   const type = file.type.startsWith("video/") ? "video" : "image";
-  const hasBlobToken = Boolean(process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_BLOB_READ_WRITE_TOKEN);
+
+  if (!BLOB_TOKEN && !CAN_WRITE_FILES) {
+    return NextResponse.json(
+      {
+        error:
+          "Chưa cấu hình kho lưu trữ file. Vào Vercel → Storage → tạo/kết nối một Blob store cho project này (biến BLOB_READ_WRITE_TOKEN), rồi deploy lại.",
+      },
+      { status: 503 },
+    );
+  }
 
   let blobUrl = "";
   let blobPathname = "";
 
   try {
-    if (hasBlobToken) {
-      const blob = await put(file.name, file, { access: "public", addRandomSuffix: true });
+    if (BLOB_TOKEN) {
+      const blob = await put(file.name, file, {
+        access: "public",
+        addRandomSuffix: true,
+        token: BLOB_TOKEN,
+      });
       blobUrl = blob.url;
       blobPathname = blob.pathname;
     } else {
@@ -65,17 +84,34 @@ export async function POST(request: Request) {
       blobPathname = local.pathname;
     }
   } catch (error) {
-    const local = await saveUploadedFileLocally(file);
-    blobUrl = local.url;
-    blobPathname = local.pathname;
+    // Never fall back to the disk on a read-only host: that is what produced the
+    // EROFS 500s instead of a usable error message.
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error("[upload] failed", { name: file.name, size: file.size, usingBlob: Boolean(BLOB_TOKEN), reason });
+    return NextResponse.json(
+      { error: `Tải lên thất bại: ${reason}` },
+      { status: 502 },
+    );
   }
 
   if (process.env.DATABASE_URL) {
-    await insertUploadedMedia(blobUrl, blobPathname, type);
+    const inserted = await insertUploadedMedia(blobUrl, blobPathname, type);
+    if (!inserted) {
+      console.error("[upload] stored file but failed to record it in the database", { url: blobUrl });
+      return NextResponse.json(
+        { error: "Đã tải file lên nhưng không lưu được vào cơ sở dữ liệu. Vui lòng kiểm tra DATABASE_URL." },
+        { status: 500 },
+      );
+    }
+  } else if (!CAN_WRITE_FILES) {
+    return NextResponse.json(
+      { error: "Chưa cấu hình DATABASE_URL nên file tải lên sẽ không hiển thị được trong thư viện." },
+      { status: 503 },
+    );
   }
 
   revalidatePath("/");
   revalidatePath("/admin");
 
-  return NextResponse.json({ ok: true, mode: hasBlobToken ? "blob" : "local" });
+  return NextResponse.json({ ok: true, mode: BLOB_TOKEN ? "blob" : "local" });
 }

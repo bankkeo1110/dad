@@ -33,8 +33,16 @@ export default async function AdminPage() {
   }
 
   const files = listMediaFilenames();
-  const deleted = getDeletedMedia();
-  const [meta, uploaded] = await Promise.all([getAllMediaMeta(), getAllUploadedMedia()]);
+  const [deleted, meta, uploaded] = await Promise.all([
+    getDeletedMedia(),
+    getAllMediaMeta(),
+    getAllUploadedMedia(),
+  ]);
+
+  const hiddenLocal = new Set(
+    deleted.filter((item) => item.source === "local" && item.filename).map((item) => item.filename),
+  );
+  const visibleFiles = files.filter(({ filename }) => !hiddenLocal.has(filename));
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10">
@@ -115,16 +123,16 @@ export default async function AdminPage() {
         </>
       )}
 
-      <h2 className="mb-3 text-sm font-semibold text-zinc-500">File có sẵn trong dự án ({files.length})</h2>
+      <h2 className="mb-3 text-sm font-semibold text-zinc-500">File có sẵn trong dự án ({visibleFiles.length})</h2>
 
-      {files.length === 0 && (
+      {visibleFiles.length === 0 && (
         <p className="text-zinc-500">
           Chưa có file nào trong <code>public/media</code>.
         </p>
       )}
 
       <div className="flex flex-col gap-3">
-        {files.map(({ filename }) => {
+        {visibleFiles.map(({ filename }) => {
           const row = meta.get(filename);
           return (
             <form

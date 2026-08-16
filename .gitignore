@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local-only soft-delete store (production uses the deleted_media table)
+/.deleted-media
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

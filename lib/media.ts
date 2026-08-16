@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { getAllMediaMeta, getAllUploadedMedia } from "@/lib/db";
+import { getDeletedMedia } from "@/lib/deleted-media";
 
 export type MediaItem = {
   key: string;
@@ -38,22 +39,31 @@ function listMediaFiles(): { filename: string; type: "image" | "video" }[] {
 }
 
 export async function getMediaItems(): Promise<MediaItem[]> {
-  const [localFiles, meta, uploaded] = await Promise.all([
+  const [localFiles, meta, uploaded, deleted] = await Promise.all([
     Promise.resolve(listMediaFiles()),
     getAllMediaMeta(),
     getAllUploadedMedia(),
+    getDeletedMedia(),
   ]);
 
-  const localItems: MediaItem[] = localFiles.map(({ filename, type }) => {
-    const row = meta.get(filename);
-    return {
-      key: `local:${filename}`,
-      src: `/media/${filename}`,
-      type,
-      name: row?.caption?.trim() || prettyName(filename),
-      sortOrder: row?.sort_order ?? null,
-    };
-  });
+  // Files bundled in public/media cannot be unlinked on a read-only host, so a
+  // "deleted" record is what actually hides them.
+  const hiddenLocal = new Set(
+    deleted.filter((item) => item.source === "local" && item.filename).map((item) => item.filename as string),
+  );
+
+  const localItems: MediaItem[] = localFiles
+    .filter(({ filename }) => !hiddenLocal.has(filename))
+    .map(({ filename, type }) => {
+      const row = meta.get(filename);
+      return {
+        key: `local:${filename}`,
+        src: `/media/${filename}`,
+        type,
+        name: row?.caption?.trim() || prettyName(filename),
+        sortOrder: row?.sort_order ?? null,
+      };
+    });
 
   const uploadedItems: MediaItem[] = uploaded.map((row) => ({
     key: `blob:${row.id}`,
