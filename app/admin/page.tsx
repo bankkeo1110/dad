@@ -2,8 +2,9 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { listMediaFilenames } from "@/lib/media";
 import { getAllMediaMeta, getAllUploadedMedia } from "@/lib/db";
+import { getDeletedMedia } from "@/lib/deleted-media";
 import { isValidAdminSession } from "@/lib/auth";
-import { login, logout, saveMeta, saveUploadedMeta, deleteUploaded } from "./actions";
+import { login, logout, saveMeta, saveUploadedMeta, deleteUploaded, restoreDeleted } from "./actions";
 import UploadForm from "@/components/UploadForm";
 
 export default async function AdminPage() {
@@ -32,6 +33,7 @@ export default async function AdminPage() {
   }
 
   const files = listMediaFilenames();
+  const deleted = getDeletedMedia();
   const [meta, uploaded] = await Promise.all([getAllMediaMeta(), getAllUploadedMedia()]);
 
   return (
@@ -49,6 +51,28 @@ export default async function AdminPage() {
       </div>
 
       <UploadForm />
+
+      {deleted.length > 0 && (
+        <>
+          <h2 className="mb-3 text-sm font-semibold text-zinc-500">Đã xóa ({deleted.length})</h2>
+          <div className="mb-8 flex flex-col gap-3">
+            {deleted.map((item) => (
+              <div key={item.key} className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+                <span className="w-20 shrink-0 text-xs uppercase text-zinc-500">{item.source}</span>
+                <span className="min-w-[160px] flex-1 truncate text-sm text-zinc-700 dark:text-zinc-200" title={item.name}>
+                  {item.name}
+                </span>
+                <form action={restoreDeleted}>
+                  <input type="hidden" name="key" value={item.key} />
+                  <button type="submit" className="rounded bg-amber-600 px-3 py-1 text-sm text-white hover:bg-amber-500">
+                    Restore
+                  </button>
+                </form>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {uploaded.length > 0 && (
         <>

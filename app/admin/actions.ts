@@ -1,5 +1,7 @@
 "use server";
 
+import fs from "fs";
+import path from "path";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { del } from "@vercel/blob";
@@ -8,7 +10,16 @@ import {
   upsertMediaMeta,
   updateUploadedMediaMeta,
   deleteUploadedMediaRow,
+  deleteMediaMeta,
+  insertUploadedMedia,
+  getAllUploadedMedia,
 } from "@/lib/db";
+import {
+  addDeletedMedia,
+  getDeletedMedia,
+  removeDeletedMedia,
+  restoreDeletedLocalFile,
+} from "@/lib/deleted-media";
 
 async function requireAdmin() {
   const store = await cookies();
@@ -74,10 +85,115 @@ export async function deleteUploaded(formData: FormData) {
   const id = typeof idRaw === "string" ? Number(idRaw) : NaN;
   if (!Number.isFinite(id)) return;
 
+  const rows = await getAllUploadedMedia();
+  const row = rows.find((item) => item.id === id);
+  if (row) {
+    addDeletedMedia({
+      id: `blob:${id}`,
+      key: `blob:${id}`,
+      source: "blob",
+      type: row.type,
+      name: row.caption ?? row.pathname,
+      src: row.url,
+      pathname: row.pathname,
+      url: row.url,
+      deletedAt: new Date().toISOString(),
+    });
+  }
+
   const url = await deleteUploadedMediaRow(id);
   if (url) {
     await del(url);
   }
+  revalidatePath("/");
+  revalidatePath("/admin");
+}
+
+export async function removeMediaItem(formData: FormData) {
+  const itemKey = formData.get("key");
+  if (typeof itemKey !== "string" || !itemKey) return;
+
+  if (itemKey.startsWith("local:")) {
+    const filename = itemKey.slice("local:".length);
+    if (!filename) return;
+
+    const filePath = path.join(process.cwd(), "public", "media", filename);
+    const backupDir = path.join(process.cwd(), ".deleted-media", "backups");
+    const backupPath = path.join(backupDir, `${Date.now()}-${filename}`);
+
+    if (fs.existsSync(filePath)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+      fs.copyFileSync(filePath, backupPath);
+      addDeletedMedia({
+        id: `${Date.now()}`,
+        key: itemKey,
+        source: "local",
+        type: filename.toLowerCase().endsWith(".mp4") || filename.toLowerCase().endsWith(".webm") || filename.toLowerCase().endsWith(".mov") || filename.toLowerCase().endsWith(".m4v") ? "video" : "image",
+        name: filename,
+        src: `/media/${filename}`,
+        filename,
+        backupPath,
+        deletedAt: new Date().toISOString(),
+      });
+      await fs.promises.unlink(filePath);
+    }
+    await deleteMediaMeta(filename);
+  }
+
+  if (itemKey.startsWith("blob:")) {
+    const id = Number(itemKey.slice("blob:".length));
+    if (!Number.isFinite(id)) return;
+
+    const rows = await getAllUploadedMedia();
+    const row = rows.find((item) => item.id === id);
+    if (row) {
+      addDeletedMedia({
+        id: `blob:${id}`,
+        key: itemKey,
+        source: "blob",
+        type: row.type,
+        name: row.caption ?? row.pathname,
+        src: row.url,
+        pathname: row.pathname,
+        url: row.url,
+        deletedAt: new Date().toISOString(),
+      });
+    }
+
+    const url = await deleteUploadedMediaRow(id);
+    if (url) {
+      await del(url);
+    }
+  }
+
+  revalidatePath("/");
+  revalidatePath("/admin");
+}
+
+export async function restoreDeleted(formData: FormData) {
+  await requireAdmin();
+
+  const key = formData.get("key");
+  if (typeof key !== "string" || !key) return;
+
+  const deleted = getDeletedMedia().find((item) => item.key === key);
+  if (!deleted) return;
+
+  if (deleted.source === "local" && deleted.filename) {
+    const restored = restoreDeletedLocalFile(deleted);
+    if (restored) {
+      await upsertMediaMeta(deleted.filename, deleted.name, null);
+    }
+  }
+
+  if (deleted.source === "blob" && deleted.url && deleted.pathname && deleted.type) {
+    const inserted = await insertUploadedMedia(deleted.url, deleted.pathname, deleted.type);
+    if (inserted) {
+      await updateUploadedMediaMeta(inserted.id, deleted.name ?? "", null);
+    }
+  }
+
+  removeDeletedMedia(key);
   revalidatePath("/");
   revalidatePath("/admin");
 }
